@@ -4,7 +4,7 @@ from jobs.stats  import run_stats
 from jobs.nlp    import run_nlp
 from jobs.graph  import run_graph
 
-DATA_FILE = "data/enwiki-latest-pages-articles-multistream.xml.bz2"
+DATA_FILE = "data/enwiki-latest-pages-articles-multistream11.xml-p6899367p7054859"
 
 def main():
     spark = get_spark()
