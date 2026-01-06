@@ -28,19 +28,25 @@ def has_path(schema, path: str) -> bool:
     return True
 
 
+def _pick_col(df, candidates):
+    """Return the first matching nested column from candidates, else None."""
+    
+    for c in candidates:
+        if has_path(df.schema, c):
+            return F.col(c)
+    return None
+
+
 def pick_text_col(df, candidates=None):
     """
     Pick the text column (as a pyspark.sql.Column) from common Wikipedia XML variants.
     Returns a Column if found, otherwise None.
     """
     if candidates is None:
-        candidates = ["text", "revision.text._VALUE", "revision.text"]
-
-    for c in candidates:
-        if has_path(df.schema, c):
-            return F.col(c)
-
-    return None
+        # Prefer the cleaned/flattened schema produced by our parser, but keep
+        # backward compatibility with raw Wikipedia XML variants.
+        candidates = ["text", "text_raw", "revision.text._VALUE", "revision.text"]
+    return _pick_col(df, candidates)
 
 
 def split_count(col, pattern: str):

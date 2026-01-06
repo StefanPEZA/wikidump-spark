@@ -13,20 +13,23 @@ def main():
         print(">>> Starting Pipeline...")
         
         # ETL: Parsing & Cleaning...
-        df_clean = run_parser(spark, DATA_FILE)
-        if df_clean is None:
+        df = run_parser(spark, DATA_FILE)
+        if df is None:
             return
         
-        df_clean.cache()
+        print(">>> Schema:")
+        df.printSchema()
+        
+        df.cache()
         
         # EDA: Statistics...
-        run_stats(df_clean)
+        run_stats(df)
         
         # NLP: Topic Modeling...
-        run_nlp(df_clean)
+        run_nlp(df)
         
         # Graph: Extracting Edges...
-        run_graph(df_clean)
+        run_graph(df)
 
     finally:
         spark.stop()
