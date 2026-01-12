@@ -66,16 +66,14 @@ def run_stats(df):
         print(">>> Text column not found. Skipping text-based stats.")
         return
 
-    # normalize chosen text to a string column "text" (clean when available)
-    df_base = df.withColumn("text", text_col.cast("string"))
+    # keep original df intact; use an internal column for stats
+    df_base = df.withColumn("text_stats", F.coalesce(text_col.cast("string"), F.lit("")))
 
     # 3) Global text stats
-    df_global = df_base.withColumn(
-        "text_len", F.length(F.coalesce(F.col("text"), F.lit("")))
-    )
-    empty_text = df_global.filter(
-        F.col("text").isNull() | (F.length(F.trim(F.col("text"))) == 0)
-    ).count()
+    df_global = df_base.withColumn("text_len", F.length(F.col("text_stats")))
+
+    empty_text = df_global.filter(F.length(F.trim(F.col("text_stats"))) == 0).count()
+
     print(
         f"\n>>> Empty/missing text (global): {empty_text:,} ({_safe_ratio(empty_text, total):.2%})"
     )
@@ -129,36 +127,55 @@ def run_stats(df):
     )
 
     print("\n>>> Link density summary (articles):")
-    (df_links.select(
-        F.min("link_count").alias("min_links"),
-        F.expr("percentile_approx(link_count, 0.5)").alias("p50_links"),
-        F.expr("percentile_approx(link_count, 0.9)").alias("p90_links"),
-        F.max("link_count").alias("max_links"),
-        F.avg("links_per_kchar").alias("avg_links_per_kchar"),
-        F.expr("percentile_approx(links_per_kchar, 0.9)").alias("p90_links_per_kchar"),
-    ).show(truncate=False))
+    (
+        df_links.select(
+            F.min("link_count").alias("min_links"),
+            F.expr("percentile_approx(link_count, 0.5)").alias("p50_links"),
+            F.expr("percentile_approx(link_count, 0.9)").alias("p90_links"),
+            F.max("link_count").alias("max_links"),
+            F.avg("links_per_kchar").alias("avg_links_per_kchar"),
+            F.expr("percentile_approx(links_per_kchar, 0.9)").alias("p90_links_per_kchar"),
+        ).show(truncate=False)
+    )
 
     if has_title:
         print(">>> Top 20 most-linked pages (articles):")
-        (df_links.orderBy(F.desc("link_count"))
-            .select("title", "text_len", "link_count", "links_per_kchar", "category_count", "template_count")
-            .show(20, truncate=False))
+        (
+            df_links.orderBy(F.desc("link_count"))
+            .select(
+                "title",
+                "text_len",
+                "link_count",
+                "links_per_kchar",
+                "category_count",
+                "template_count",
+            )
+            .show(20, truncate=False)
+        )
 
     # 6) Vocabulary (simple)
     print("\n>>> Vocabulary (articles): top 30 tokens (stopwords removed):")
+
+    # IMPORTANT: tokenizer input must exist in the dataset passed to transform.
+    # We created "text_stats", so we must select that column (not "text").
     tok = RegexTokenizer(
-        inputCol="text",
+        inputCol="text_stats",
         outputCol="tokens_raw",
         pattern="\\W+",
         toLowercase=True,
-        minTokenLength=3
+        minTokenLength=3,
     )
-    df_tok = tok.transform(df_links.select("text"))
+
+    # Keep only the needed column to reduce shuffle
+    df_tok = tok.transform(df_links.select("text_stats"))
 
     remover = StopWordsRemover(inputCol="tokens_raw", outputCol="tokens")
     df_tok2 = remover.transform(df_tok)
 
-    (df_tok2.select(F.explode("tokens").alias("token"))
-        .groupBy("token").count()
+    (
+        df_tok2.select(F.explode("tokens").alias("token"))
+        .groupBy("token")
+        .count()
         .orderBy(F.desc("count"))
-        .show(30, truncate=False))
+        .show(30, truncate=False)
+    )
