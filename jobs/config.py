@@ -9,6 +9,15 @@ def get_spark(app_name="WikiDump-Spark",
         num_threads (int): Number of local threads to use.
     """
     try:
+        # builder = SparkSession.builder.appName(app_name)
+        # master = os.getenv("SPARK_MASTER")
+        # if master:
+        #     builder = builder.master(master)
+
+        # spark = builder.getOrCreate()
+        # if spark is None:
+        #     raise RuntimeError("Failed to create SparkSession")
+        # return spark
         builder = SparkSession.builder.appName(app_name)
         builder = builder.master(f"local[{num_threads}]")
         spark = builder.getOrCreate()

@@ -5,54 +5,62 @@ from jobs.utils.wiki_df_helpers import _pick_col, pick_text_col
 def _clean_wikitext(text_raw: F.Column) -> F.Column:
     text = F.coalesce(text_raw.cast("string"), F.lit(""))
 
-    # --- Remove references ---
+    # --- 1. Remove structure blocks first ---
+    # Remove Refs
     text = F.regexp_replace(text, r"(?is)<ref[^>]*>.*?</ref>", " ")
     text = F.regexp_replace(text, r"(?i)<ref[^>]*/>", " ")
+    
+    # Remove Tables (start to end)
+    text = F.regexp_replace(text, r"(?is)\{\|.*?\|\}", " ")
+    
+    # Remove HTML Comments
+    text = F.regexp_replace(text, r"(?s)<!--.*?-->", " ")
 
-    # --- Remove non-readable blocks ---
-    text = F.regexp_replace(text, r"(?is)<(gallery|script|style|noinclude)[^>]*>.*?</$1>", " ")
+    # Remove non-readable blocks (gallery, script, style, etc)
+    text = F.regexp_replace(text, r"(?is)<(gallery|script|style|noinclude|div|span)[^>]*>.*?</\1>", " ")
     text = F.regexp_replace(text, r"(?i)<br\s*/?>", "\n")
     text = F.regexp_replace(text, r"<[^>]+>", " ")
 
-    # --- Remove Category, File, Image links ---
+    # --- 2. Remove File/Image Links completely (often contain captions that are noisy) ---
     text = F.regexp_replace(text, r"\[\[(?i:(Category|File|Image)):[^\]]*?\]\]", " ")
 
-    # --- Flatten templates ---
-    # Keep last parameter if exists: {{birth date|1896|1|3}} -> 1896|1|3
-    text = F.regexp_replace(text, r"\{\{[^|}]+\|([^}]*)\}\}", r"$1")
-    # Catch templates with no | param: {{height}} -> height
-    text = F.regexp_replace(text, r"\{\{([^}]+)\}\}", r"$1")
+    # --- 3. Flatten Templates ---
+    # Remove Infobox params (lines starting with |)
+    text = F.regexp_replace(text, r"(?m)^\s*\|.*$", "")
+    
+    # Generic templates: {{...}} -> remove entirely. 
+    # Repeat to handle nesting (e.g. {{Infobox... {{date}} ...}}) as regex is not recursive.
+    # Level 1 (innermost)
+    text = F.regexp_replace(text, r"\{\{[^\{\}]*\}\}", "")
+    # Level 2
+    text = F.regexp_replace(text, r"\{\{[^\{\}]*\}\}", "")
+    # Level 3 (cleanup remaining)
+    text = F.regexp_replace(text, r"(?s)\{\{[^}]*?\}\}", "") 
 
-    # --- Flatten internal links ---
+    # --- 4. Flatten Links ---
     # [[target|label]] -> label
     text = F.regexp_replace(text, r"\[\[[^|\]]+\|([^\]]+)\]\]", r"$1")
     # [[target]] -> target
     text = F.regexp_replace(text, r"\[\[([^\]]+)\]\]", r"$1")
 
-    # --- Flatten external links ---
+    # --- 5. External Links ---
     # [http://url label] -> label
     text = F.regexp_replace(text, r"\[https?://[^\s\]]+\s+([^\]]+)\]", r"$1")
-    # [http://url] -> remove
-    text = F.regexp_replace(text, r"\[https?://[^\]]+\]", " ")
-    # Bare URLs -> remove
+    # Bare URLs
     text = F.regexp_replace(text, r"https?://\S+", " ")
+    text = F.regexp_replace(text, r"\[https?://[^\]]+\]", " ")
 
-    # --- Table & structure cleanup ---
-    text = F.regexp_replace(text, r"(?m)^\s*\{\|.*$", "")
-    text = F.regexp_replace(text, r"(?m)^\s*\|\}.*$", "")
-    text = F.regexp_replace(text, r"(?m)^\s*\|-.*$", "")
-    text = F.regexp_replace(text, r"(?m)^\s*\|\s*", "")
-
-    # --- Headers ---
-    text = F.regexp_replace(text, r"(?m)^=+\s*(.*?)\s*=+$", r"$1")
-
-    # --- Formatting cleanup ---
+    # --- 6. Formatting & Cleanup ---
     text = F.regexp_replace(text, r"'{2,5}", "")              # bold/italic
     text = F.regexp_replace(text, r"(?m)^\s*[*#;:]+\s*", "")  # bullets
     text = F.regexp_replace(text, r"[ \t]+", " ")             # collapse spaces
-    text = F.regexp_replace(text, r"(?m)^[ \t]+|[ \t]+$", "") # trim lines
-    text = F.regexp_replace(text, r"[\n\r]\s*[\n\r]+", "\n")  # collapse multiple newlines
-
+    
+    # Remove stray infobox leftovers
+    text = F.regexp_replace(text, r"(?m)^[\s\|!]+$", "")
+    
+    # Normalize newlines
+    text = F.regexp_replace(text, r"[\n\r]+", "\n")
+    
     return F.trim(text)
 
 

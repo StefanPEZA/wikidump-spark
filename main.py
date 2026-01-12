@@ -1,35 +1,42 @@
+import argparse
 from jobs.config import get_spark
 from jobs.parser import run_parser
 from jobs.stats  import run_stats
 from jobs.nlp    import run_nlp
 from jobs.graph  import run_graph
 
-DATA_FILE = "data/enwiki-latest-pages-articles-multistream11.xml-p6899367p7054859"
+## python main.py --input "./data/enwiki-latest-pages-articles-multistream11.xml-p6899367p7054859" --out "./out/local-run" --k 10
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input", required=True, help="Path (HDFS sau path comun)")
+    ap.add_argument("--out", required=True, help="Folder output (HDFS sau path comun)")
+    ap.add_argument("--k", type=int, default=10, help="Numar clustere KMeans")
+    args = ap.parse_args()
+
     spark = get_spark()
 
     try:
         print(">>> Starting Pipeline...")
-        
+
         # ETL: Parsing & Cleaning...
-        df = run_parser(spark, DATA_FILE)
+        df = run_parser(spark, args.input)
         if df is None:
             return
-        
+
         print(">>> Schema:")
         df.printSchema()
-        
+
         df.cache()
-        
+
         # EDA: Statistics...
         run_stats(df)
-        
+
         # NLP: Topic Modeling...
-        run_nlp(df)
-        
+        run_nlp(df, args.out, k=args.k)
+
         # Graph: Extracting Edges...
-        run_graph(df)
+        run_graph(df, args.out)
 
     finally:
         spark.stop()
