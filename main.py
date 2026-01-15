@@ -9,9 +9,9 @@ from jobs.graph  import run_graph
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", required=True, help="Path (HDFS sau path comun)")
-    ap.add_argument("--out", required=True, help="Folder output (HDFS sau path comun)")
-    ap.add_argument("--k", type=int, default=10, help="Numar clustere KMeans")
+    ap.add_argument("--input", required=True, help="Path (HDFS or local path)")
+    ap.add_argument("--out", required=True, help="Folder output (HDFS or local path)")
+    ap.add_argument("--k", type=int, default=10, help="Number of KMeans/LDA clusters")
     args = ap.parse_args()
 
     spark = get_spark()
@@ -30,7 +30,7 @@ def main():
         df.cache()
 
         # EDA: Statistics...
-        run_stats(df)
+        run_stats(df, args.out)
 
         # NLP: Topic Modeling...
         run_nlp(df, args.out, k=args.k)

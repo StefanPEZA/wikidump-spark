@@ -5,29 +5,21 @@ from jobs.utils.wiki_df_helpers import _pick_col, pick_text_col
 def _clean_wikitext(text_raw: F.Column) -> F.Column:
     text = F.coalesce(text_raw.cast("string"), F.lit(""))
 
-    # --- 1. Remove structure blocks first ---
-    # Remove Refs
+    # --- Remove references ---
     text = F.regexp_replace(text, r"(?is)<ref[^>]*>.*?</ref>", " ")
     text = F.regexp_replace(text, r"(?i)<ref[^>]*/>", " ")
-    
-    # Remove Tables (start to end)
-    text = F.regexp_replace(text, r"(?is)\{\|.*?\|\}", " ")
-    
-    # Remove HTML Comments
-    text = F.regexp_replace(text, r"(?s)<!--.*?-->", " ")
 
-    # Remove non-readable blocks (gallery, script, style, etc)
-    text = F.regexp_replace(text, r"(?is)<(gallery|script|style|noinclude|div|span)[^>]*>.*?</\1>", " ")
+    # --- Remove non-readable blocks ---
+    text = F.regexp_replace(text, r"(?is)<(gallery|script|style|noinclude)[^>]*>.*?</$1>", " ")
     text = F.regexp_replace(text, r"(?i)<br\s*/?>", "\n")
     text = F.regexp_replace(text, r"<[^>]+>", " ")
 
-    # --- 2. Remove File/Image Links completely (often contain captions that are noisy) ---
+    # --- Remove Category, File, Image links ---
     text = F.regexp_replace(text, r"\[\[(?i:(Category|File|Image)):[^\]]*?\]\]", " ")
 
-    # --- 3. Flatten Templates ---
+    # --- Flatten templates ---
     # Remove Infobox params (lines starting with |)
     text = F.regexp_replace(text, r"(?m)^\s*\|.*$", "")
-    
     # Generic templates: {{...}} -> remove entirely. 
     # Repeat to handle nesting (e.g. {{Infobox... {{date}} ...}}) as regex is not recursive.
     # Level 1 (innermost)
@@ -37,31 +29,38 @@ def _clean_wikitext(text_raw: F.Column) -> F.Column:
     # Level 3 (cleanup remaining)
     text = F.regexp_replace(text, r"(?s)\{\{[^}]*?\}\}", "") 
 
-    # --- 4. Flatten Links ---
+    # --- Flatten internal links ---
     # [[target|label]] -> label
     text = F.regexp_replace(text, r"\[\[[^|\]]+\|([^\]]+)\]\]", r"$1")
     # [[target]] -> target
     text = F.regexp_replace(text, r"\[\[([^\]]+)\]\]", r"$1")
 
-    # --- 5. External Links ---
+    # --- Flatten external links ---
     # [http://url label] -> label
     text = F.regexp_replace(text, r"\[https?://[^\s\]]+\s+([^\]]+)\]", r"$1")
-    # Bare URLs
-    text = F.regexp_replace(text, r"https?://\S+", " ")
+    # [http://url] -> remove
     text = F.regexp_replace(text, r"\[https?://[^\]]+\]", " ")
+    # Bare URLs -> remove
+    text = F.regexp_replace(text, r"https?://\S+", " ")
 
-    # --- 6. Formatting & Cleanup ---
+    # --- Table & structure cleanup ---
+    text = F.regexp_replace(text, r"(?m)^\s*\{\|.*$", "")
+    text = F.regexp_replace(text, r"(?m)^\s*\|\}.*$", "")
+    text = F.regexp_replace(text, r"(?m)^\s*\|-.*$", "")
+    text = F.regexp_replace(text, r"(?m)^\s*\|\s*", "")
+
+    # --- Headers ---
+    text = F.regexp_replace(text, r"(?m)^=+\s*(.*?)\s*=+$", r"$1")
+
+    # --- Formatting cleanup ---
     text = F.regexp_replace(text, r"'{2,5}", "")              # bold/italic
     text = F.regexp_replace(text, r"(?m)^\s*[*#;:]+\s*", "")  # bullets
     text = F.regexp_replace(text, r"[ \t]+", " ")             # collapse spaces
-    
-    # Remove stray infobox leftovers
-    text = F.regexp_replace(text, r"(?m)^[\s\|!]+$", "")
-    
-    # Normalize newlines
-    text = F.regexp_replace(text, r"[\n\r]+", "\n")
-    
-    return F.trim(text)
+    text = F.regexp_replace(text, r"(?m)^[ \t]+|[ \t]+$", "") # trim lines
+    text = F.regexp_replace(text, r"[\n\r]\s*[\n\r]+", "\n")  # collapse multiple newlines
+
+    # Trim overall
+    return F.regexp_replace(text, r"^[ \n\r\t]+|[ \n\r\t]+$", "")
 
 
 def run_parser(spark, file_path: str) -> DataFrame:
@@ -163,6 +162,7 @@ def run_parser(spark, file_path: str) -> DataFrame:
                 print(f"11.Text length:    {len(row['text']) if row['text'] else 0}")
                 print(f"12.Clean Text:\n{row['text']}")
                 print(f"----------------")
+                print(f"13.Raw Text:\n{row['text_raw'][0:500]}...")
             else:
                 print(">>> Warning: No valid rows found for validation.")
 

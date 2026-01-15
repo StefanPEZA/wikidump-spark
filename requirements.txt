@@ -1,3 +1,4 @@
-py4j==0.10.9.9
-pyspark==4.0.1
-numpy==2.4.0
+py4j>=0.10.9.9
+pyspark>=4.0.1
+numpy>=2.4.0
+graphframes>=0.6.0
